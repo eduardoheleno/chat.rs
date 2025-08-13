@@ -22,3 +22,4 @@ pub trait Task: Send {
 }
 
 pub mod login_task;
+pub mod create_account_task;

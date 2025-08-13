@@ -3,6 +3,7 @@ mod http;
 mod thread;
 mod task;
 mod state;
+mod util;
 
 use eframe::egui;
 use app::App;

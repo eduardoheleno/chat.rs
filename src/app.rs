@@ -1,13 +1,16 @@
 use std::sync::mpsc::{self, Sender, Receiver};
 use eframe::egui;
 use super::task::TaskResult;
+use super::task::TaskType;
 use super::state::login::LoginState;
+use super::state::create_account::CreateAccountState;
 use super::state::Page;
 use super::thread::http_thread::{init_http_thread, TaskWrapper};
 
 pub struct App {
     current_page: Page,
     login_state: LoginState,
+    create_account_state: CreateAccountState,
     http_thread: Sender<TaskWrapper>,
     result_queue: Vec<Receiver<TaskResult>>
 }
@@ -20,6 +23,7 @@ impl Default for App {
         Self {
             current_page: Page::Login,
             login_state: LoginState::default(),
+            create_account_state: CreateAccountState::default(),
             http_thread: http_thread_sender,
             result_queue: Vec::new()
         }
@@ -31,7 +35,11 @@ impl App {
         for i in 0..self.result_queue.len() {
             match self.result_queue[i].try_recv() {
                 Ok(task_result) => {
-                    println!("{}", task_result.response);
+                    match task_result.task_type {
+                        TaskType::Login => {},
+                        TaskType::CreateAccount => self.create_account_state.handle_task_result(task_result)
+                    }
+
                     self.result_queue.swap_remove(i);
                 },
                 Err(_e) => {}
@@ -46,9 +54,15 @@ impl eframe::App for App {
             Page::Login => self.login_state.show_login_page(
                 &self.http_thread,
                 &mut self.result_queue,
+                &mut self.current_page,
                 ctx
             ),
-            Page::CreateAccount => {},
+            Page::CreateAccount => self.create_account_state.show_create_account_page(
+                &self.http_thread,
+                &mut self.result_queue,
+                &mut self.current_page,
+                ctx
+            ),
             Page::Chat => {}
         }
 

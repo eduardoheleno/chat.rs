@@ -2,6 +2,7 @@ use crate::egui;
 use crate::thread::http_thread::TaskWrapper;
 use crate::task::login_task::LoginTask;
 use crate::task::TaskResult;
+use crate::state::Page;
 use egui::{
     RichText,
     TextEdit
@@ -29,6 +30,7 @@ impl LoginState {
         &mut self,
         http_thread: &Sender<TaskWrapper>,
         result_queue: &mut Vec<Receiver<TaskResult>>,
+        current_page: &mut Page,
         ctx: &egui::Context
     ) {
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -53,10 +55,13 @@ impl LoginState {
                     ui.add_space(15.);
 
                     ui.columns(2, |columns| {
+                        let create_account_button = egui::Button::new("Create account");
+                        if columns[0].add(create_account_button).clicked() {
+                            *current_page = Page::CreateAccount;
+                        }
+
                         let login_button = egui::Button::new("Login");
                         if columns[1].add_enabled(!self.is_loading, login_button).clicked() {
-                            self.is_loading = true;
-
                             let login_task = LoginTask::new(self.email.to_owned(), self.password.to_owned());
                             let (task_channel_sender, task_channel_receiver) = mpsc::channel();
                             let task_wrapper = TaskWrapper::new(
