@@ -3,6 +3,8 @@ use crate::thread::http_thread::TaskWrapper;
 use crate::task::create_account_task::CreateAccountTask;
 use crate::task::TaskResult;
 use crate::state::Page;
+use crate::util::keyring_handler::{save_private_key, get_private_key};
+use rsa::pkcs1::EncodeRsaPrivateKey;
 use serde::{Deserialize, Serialize};
 use egui::{
     RichText,
@@ -20,6 +22,7 @@ pub struct CreateAccountState {
     pub email: String,
     pub password: String,
     pub confirm_password: String,
+    pub success: String,
     pub error: String,
     pub is_loading: bool
 }
@@ -30,6 +33,7 @@ impl Default for CreateAccountState {
             email: String::new(),
             password: String::new(),
             confirm_password: String::new(),
+            success: String::new(),
             error: String::new(),
             is_loading: false
         }
@@ -75,12 +79,15 @@ impl CreateAccountState {
                         ui.columns(2, |columns| {
                             let create_account_button = egui::Button::new("Back to login");
                             if columns[0].add(create_account_button).clicked() {
+                                self.clear_messages();
+                                self.clear_fields();
                                 *current_page = Page::Login;
                             }
 
                             let login_button = egui::Button::new("Create");
                             if columns[1].add(login_button).clicked() {
-                                self.error.clear();
+                                self.clear_messages();
+
                                 if self.password != self.confirm_password {
                                     self.error = "Your passwords are not equal".to_owned();
                                     return;
@@ -103,8 +110,15 @@ impl CreateAccountState {
                                 result_queue.push(task_channel_receiver);
                             }
                         });
+                        if ui.button("debug").clicked() {
+                            get_private_key("eduardo@email.com".to_owned());
+                        }
                     }
 
+                    ui.label(
+                        RichText::new(self.success.to_owned())
+                            .color(Color32::GREEN)
+                    );
                     ui.label(
                         RichText::new(self.error.to_owned())
                             .color(Color32::RED)
@@ -117,9 +131,33 @@ impl CreateAccountState {
     pub fn handle_task_result(&mut self, task_result: TaskResult) {
         self.is_loading = false;
 
+        let parsed_response: HttpResponse = serde_json::from_str(task_result.response.as_ref()).unwrap();
         if task_result.status_code >= 400 {
-            let parsed_response: HttpResponse = serde_json::from_str(task_result.response.as_ref()).unwrap();
             self.error = parsed_response.message;
+            return;
         }
+
+        let private_key_params = task_result.private_key_params.expect("Private key params not defined");
+        let private_key_bytes = private_key_params.private_key
+            .to_pkcs1_der()
+            .expect("Failed to encode private key")
+            .as_bytes()
+            .to_vec();
+
+        save_private_key(private_key_params.email, private_key_bytes);
+
+        self.clear_fields();
+        self.success = parsed_response.message;
+    }
+
+    fn clear_messages(&mut self) {
+        self.success.clear();
+        self.error.clear();
+    }
+
+    fn clear_fields(&mut self) {
+        self.email.clear();
+        self.password.clear();
+        self.confirm_password.clear();
     }
 }

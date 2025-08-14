@@ -25,6 +25,7 @@ impl Task for LoginTask {
                 let result = TaskResult::new(
                     r.status().as_u16(),
                     r.text().unwrap(),
+                    None,
                     TaskType::Login
                 );
                 Ok(result)

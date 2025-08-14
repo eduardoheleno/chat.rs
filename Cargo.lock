@@ -1719,6 +1719,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "keyring"
+version = "3.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eebcc3aff044e5944a8fbaf69eb277d11986064cba30c468730e8b9909fb551c"
+dependencies = [
+ "byteorder",
+ "linux-keyutils",
+ "log",
+ "windows-sys 0.60.2",
+ "zeroize",
+]
+
+[[package]]
 name = "khronos_api"
 version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1764,6 +1777,16 @@ dependencies = [
  "bitflags 2.9.1",
  "libc",
  "redox_syscall 0.5.17",
+]
+
+[[package]]
+name = "linux-keyutils"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "761e49ec5fd8a5a463f9b84e877c373d888935b71c6be78f3767fe2ae6bed18e"
+dependencies = [
+ "bitflags 2.9.1",
+ "libc",
 ]
 
 [[package]]
@@ -1952,6 +1975,7 @@ name = "nossochat_gui"
 version = "0.1.0"
 dependencies = [
  "eframe",
+ "keyring",
  "rand",
  "reqwest",
  "rsa",
