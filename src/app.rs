@@ -4,6 +4,7 @@ use super::task::TaskResult;
 use super::task::TaskType;
 use super::state::login::LoginState;
 use super::state::create_account::CreateAccountState;
+use super::state::chat::ChatState;
 use super::state::Page;
 use super::thread::http_thread::{init_http_thread, TaskWrapper};
 
@@ -11,6 +12,7 @@ pub struct App {
     current_page: Page,
     login_state: LoginState,
     create_account_state: CreateAccountState,
+    chat_state: ChatState,
     http_thread: Sender<TaskWrapper>,
     result_queue: Vec<Receiver<TaskResult>>
 }
@@ -24,6 +26,7 @@ impl Default for App {
             current_page: Page::Login,
             login_state: LoginState::default(),
             create_account_state: CreateAccountState::default(),
+            chat_state: ChatState::default(),
             http_thread: http_thread_sender,
             result_queue: Vec::new()
         }
@@ -36,8 +39,8 @@ impl App {
             match self.result_queue[i].try_recv() {
                 Ok(task_result) => {
                     match task_result.task_type {
-                        TaskType::Login => {},
-                        TaskType::CreateAccount => self.create_account_state.handle_task_result(task_result)
+                        TaskType::Login => self.login_state.handle_task_login(task_result),
+                        TaskType::CreateAccount => self.create_account_state.handle_task_create_account(task_result)
                     }
 
                     self.result_queue.swap_remove(i);

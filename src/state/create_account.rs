@@ -128,7 +128,7 @@ impl CreateAccountState {
         });
     }
 
-    pub fn handle_task_result(&mut self, task_result: TaskResult) {
+    pub fn handle_task_create_account(&mut self, task_result: TaskResult) {
         self.is_loading = false;
 
         let parsed_response: HttpResponse = serde_json::from_str(task_result.response.as_ref()).unwrap();
