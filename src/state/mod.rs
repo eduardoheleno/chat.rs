@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use rsa::RsaPublicKey;
 
 pub enum Page {
     Login,
@@ -15,14 +16,24 @@ pub struct Contact {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct ContactUser {
+pub struct ContactUserJSON {
     pub id: u64,
     pub email: String,
-    #[serde(with="serde_bytes")]
-    pub public_key: Vec<u8>
+    pub public_key: String
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct ContactInfoJSON {
+    pub contact: Contact,
+    pub contact_user: ContactUserJSON
+}
+
+pub struct ContactUser {
+    pub id: u64,
+    pub email: String,
+    pub public_key: RsaPublicKey,
+}
+
 pub struct ContactInfo {
     pub contact: Contact,
     pub contact_user: ContactUser

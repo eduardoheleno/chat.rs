@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+base64 = "0.22.1"
 eframe = "0.32.0"
 keyring = { version = "3.6.3", features = ["windows-native", "linux-native"] }
 rand = "0.8.5"

@@ -1,8 +1,14 @@
-use super::Contact;
+use crate::egui;
+use super::ContactInfo;
+use egui::{
+    RichText,
+    // TextEdit,
+    // Color32
+};
 
 pub struct ChatState {
     pub token: String,
-    pub contacts: Vec<Contact>
+    pub contacts: Vec<ContactInfo>
 }
 
 impl Default for ChatState {
@@ -11,5 +17,16 @@ impl Default for ChatState {
             token: String::new(),
             contacts: Vec::new()
         }
+    }
+}
+
+impl ChatState {
+    pub fn show_chat_page(
+        &mut self,
+        ctx: &egui::Context
+    ) {
+       egui::CentralPanel::default().show(ctx, |ui| {
+           ui.label(RichText::new("Chat"));
+       });
     }
 }

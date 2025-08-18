@@ -39,7 +39,11 @@ impl App {
             match self.result_queue[i].try_recv() {
                 Ok(task_result) => {
                     match task_result.task_type {
-                        TaskType::Login => self.login_state.handle_task_login(task_result),
+                        TaskType::Login => self.login_state.handle_task_login(
+                            task_result,
+                            &mut self.chat_state,
+                            &mut self.current_page
+                        ),
                         TaskType::CreateAccount => self.create_account_state.handle_task_create_account(task_result)
                     }
 
@@ -66,7 +70,7 @@ impl eframe::App for App {
                 &mut self.current_page,
                 ctx
             ),
-            Page::Chat => {}
+            Page::Chat => self.chat_state.show_chat_page(ctx)
         }
 
         self.process_result_queue();
