@@ -44,7 +44,8 @@ impl App {
                             &mut self.chat_state,
                             &mut self.current_page
                         ),
-                        TaskType::CreateAccount => self.create_account_state.handle_task_create_account(task_result)
+                        TaskType::CreateAccount => self.create_account_state.handle_task_create_account(task_result),
+                        TaskType::FetchContactData =>  self.chat_state.handle_task_fetch_contact_data(task_result),
                     }
 
                     self.result_queue.swap_remove(i);
@@ -70,7 +71,11 @@ impl eframe::App for App {
                 &mut self.current_page,
                 ctx
             ),
-            Page::Chat => self.chat_state.show_chat_page(ctx)
+            Page::Chat => self.chat_state.show_chat_page(
+                &self.http_thread,
+                &mut self.result_queue,
+                ctx
+            )
         }
 
         self.process_result_queue();

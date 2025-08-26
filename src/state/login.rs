@@ -3,19 +3,18 @@ use crate::thread::http_thread::TaskWrapper;
 use crate::task::login_task::LoginTask;
 use crate::task::TaskResult;
 use crate::state::Page;
+use crate::util::keyring_handler::get_private_key;
 use super::ContactInfoJSON;
 use super::ContactInfo;
 use super::ContactUser;
 use super::chat::ChatState;
+use x25519_dalek::StaticSecret;
 use egui::{
     RichText,
     TextEdit,
     Color32
 };
-use rsa::pkcs1::DecodeRsaPublicKey;
-use rsa::RsaPublicKey;
 use serde::{Deserialize, Serialize};
-use base64::prelude::*;
 use std::sync::mpsc::{self, Sender, Receiver};
 
 #[derive(Serialize, Deserialize)]
@@ -128,20 +127,24 @@ impl LoginState {
 
         let parsed_success: HttpResponseSuccess = serde_json::from_str(task_result.response.as_ref()).unwrap();
         let parsed_contacts = parsed_success.contacts.into_iter().map(|contact| {
-            let public_key_bytes = BASE64_STANDARD.decode(contact.contact_user.public_key).unwrap();
-            let public_key_instance = DecodeRsaPublicKey::from_pkcs1_der(&public_key_bytes).unwrap();
             let contact_user = ContactUser {
                 id: contact.contact_user.id,
-                email: contact.contact_user.email,
-                public_key: public_key_instance
+                email: contact.contact_user.email
             };
 
             ContactInfo {
                 contact: contact.contact,
-                contact_user
+                contact_user,
+                chat_id: None,
+                cipher: None
             }
         }).collect();
+        let private_key_bytes: [u8; 32] = get_private_key(self.email.clone()).try_into().unwrap();
+        let private_key = StaticSecret::from(private_key_bytes);
+
         chat_state.contacts = parsed_contacts;
+        chat_state.token = parsed_success.token;
+        chat_state.private_key = Some(private_key);
 
         *page_state = Page::Chat;
     }

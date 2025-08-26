@@ -3,8 +3,7 @@ use crate::thread::http_thread::TaskWrapper;
 use crate::task::create_account_task::CreateAccountTask;
 use crate::task::TaskResult;
 use crate::state::Page;
-use crate::util::keyring_handler::{save_private_key, get_private_key};
-use rsa::pkcs1::EncodeRsaPrivateKey;
+use crate::util::keyring_handler::{save_private_key};
 use serde::{Deserialize, Serialize};
 use egui::{
     RichText,
@@ -86,6 +85,7 @@ impl CreateAccountState {
 
                             let login_button = egui::Button::new("Create");
                             if columns[1].add(login_button).clicked() {
+                                // TODO: wrap this into a function
                                 self.clear_messages();
 
                                 if self.password != self.confirm_password {
@@ -111,7 +111,7 @@ impl CreateAccountState {
                             }
                         });
                         if ui.button("debug").clicked() {
-                            get_private_key("eduardo@email.com".to_owned());
+                            // get_private_key("eduardo@email.com".to_owned());
                         }
                     }
 
@@ -138,11 +138,7 @@ impl CreateAccountState {
         }
 
         let private_key_params = task_result.private_key_params.expect("Private key params not defined");
-        let private_key_bytes = private_key_params.private_key
-            .to_pkcs1_der()
-            .expect("Failed to encode private key")
-            .as_bytes()
-            .to_vec();
+        let private_key_bytes = private_key_params.private_key.as_bytes();
 
         save_private_key(private_key_params.email, private_key_bytes);
 

@@ -1,8 +1,7 @@
 use super::{Task, TaskResult, TaskType};
 use crate::util::encryption::generate_assymetric_keypair;
 use serde_json::json;
-use rsa::pkcs1::EncodeRsaPublicKey;
-use rsa::RsaPrivateKey;
+use x25519_dalek::StaticSecret;
 
 pub struct CreateAccountTask {
     email: String,
@@ -17,11 +16,11 @@ impl CreateAccountTask {
 
 pub struct PrivateKeyParams {
     pub email: String,
-    pub private_key: RsaPrivateKey
+    pub private_key: StaticSecret
 }
 
 impl PrivateKeyParams {
-    pub fn new(email: String, private_key: RsaPrivateKey) -> Self {
+    pub fn new(email: String, private_key: StaticSecret) -> Self {
         Self { email, private_key }
     }
 }
@@ -29,11 +28,7 @@ impl PrivateKeyParams {
 impl Task for CreateAccountTask {
     fn exec(&self, http_client: &crate::http::HttpClient) -> Result<TaskResult, std::io::Error> {
         let keypair = generate_assymetric_keypair();
-        let public_key_bytes = keypair.public_key
-            .to_pkcs1_der()
-            .expect("Failed to encode public key")
-            .as_bytes()
-            .to_vec();
+        let public_key_bytes = keypair.public_key.as_bytes();
 
         let body = json!({
             "email": self.email,
@@ -41,7 +36,7 @@ impl Task for CreateAccountTask {
             "public_key": public_key_bytes
         });
 
-        let response = http_client.post("user/create", Some(body));
+        let response = http_client.post("user/create", Some(body), None);
         match response {
             Ok(r) => {
                 let private_key_params = PrivateKeyParams::new(self.email.clone(), keypair.private_key);

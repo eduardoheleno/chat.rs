@@ -1,5 +1,6 @@
 use reqwest::{
     Url,
+    header::HeaderMap,
     blocking::{Client, Response},
     Error
 };
@@ -18,9 +19,15 @@ impl HttpClient {
         }
     }
 
-    pub fn post(&self, path: &str, body: Option<Value>) -> Result<Response, Error> {
+    pub fn post(&self, path: &str, body: Option<Value>, headers: Option<HeaderMap>) -> Result<Response, Error> {
         let full_url = self.base_url.join(path).expect("Bad path");
-        self.http_client.post(full_url)
+        let mut request_builder = self.http_client.post(full_url);
+
+        if let Some(h) = headers {
+            request_builder = request_builder.headers(h);
+        }
+
+        request_builder
             .json(&body)
             .send()
     }
