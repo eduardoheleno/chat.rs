@@ -31,4 +31,9 @@ impl HttpClient {
             .json(&body)
             .send()
     }
+
+    // pub fn get(&self, path: &str, headers: Option<HeaderMap>) -> Result<Response, Error> {
+    //     let full_url = self.base_url.join(path).expect("Bad path");
+    //     full_url.set_query()
+    // }
 }

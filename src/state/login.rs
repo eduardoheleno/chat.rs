@@ -4,11 +4,13 @@ use crate::task::login_task::LoginTask;
 use crate::task::TaskResult;
 use crate::state::Page;
 use crate::util::keyring_handler::get_private_key;
+use crate::util::encryption::generate_cipher;
 use super::ContactInfoJSON;
 use super::ContactInfo;
 use super::ContactUser;
 use super::chat::ChatState;
-use x25519_dalek::StaticSecret;
+use base64::prelude::*;
+use x25519_dalek::{StaticSecret, PublicKey};
 use egui::{
     RichText,
     TextEdit,
@@ -25,6 +27,7 @@ struct HttpResponseError {
 #[derive(Serialize, Deserialize)]
 struct HttpResponseSuccess {
     token: String,
+    user_id: u64,
     contacts: Vec<ContactInfoJSON>
 }
 
@@ -90,11 +93,7 @@ impl LoginState {
                                 self.is_loading = true;
 
                                 let login_task = LoginTask::new(self.email.to_owned(), self.password.to_owned());
-                                let (task_channel_sender, task_channel_receiver) = mpsc::channel();
-                                let task_wrapper = TaskWrapper::new(
-                                    Box::new(login_task),
-                                    task_channel_sender
-                                );
+                                let (task_wrapper, task_channel_receiver) = TaskWrapper::new(Box::new(login_task));
 
                                 http_thread.send(task_wrapper).unwrap();
                                 result_queue.push(task_channel_receiver);
@@ -115,7 +114,8 @@ impl LoginState {
         &mut self,
         task_result: TaskResult,
         chat_state: &mut ChatState,
-        page_state: &mut Page
+        page_state: &mut Page,
+        ctx: &egui::Context
     ) {
         self.is_loading = false;
 
@@ -125,8 +125,19 @@ impl LoginState {
             return;
         }
 
+        let private_key_bytes: [u8; 32] = get_private_key(self.email.clone()).try_into().unwrap();
+        let private_key = StaticSecret::from(private_key_bytes);
+
         let parsed_success: HttpResponseSuccess = serde_json::from_str(task_result.response.as_ref()).unwrap();
         let parsed_contacts = parsed_success.contacts.into_iter().map(|contact| {
+            let contact_public_key_bytes: [u8; 32] = BASE64_STANDARD
+                .decode(contact.contact_user.public_key)
+                .unwrap()
+                .try_into()
+                .unwrap();
+            let contact_public_key = PublicKey::from(contact_public_key_bytes);
+            let cipher = generate_cipher(contact_public_key, private_key.clone());
+
             let contact_user = ContactUser {
                 id: contact.contact_user.id,
                 email: contact.contact_user.email
@@ -136,16 +147,18 @@ impl LoginState {
                 contact: contact.contact,
                 contact_user,
                 chat_id: None,
-                cipher: None
+                cipher
             }
         }).collect();
-        let private_key_bytes: [u8; 32] = get_private_key(self.email.clone()).try_into().unwrap();
-        let private_key = StaticSecret::from(private_key_bytes);
 
         chat_state.contacts = parsed_contacts;
         chat_state.token = parsed_success.token;
+        chat_state.user_id = parsed_success.user_id;
         chat_state.private_key = Some(private_key);
 
-        *page_state = Page::Chat;
+        match chat_state.connect_websocket(ctx) {
+            Ok(()) => *page_state = Page::Chat,
+            Err(e) => self.error = e.to_string()
+        }
     }
 }

@@ -34,7 +34,7 @@ impl Default for App {
 }
 
 impl App {
-    fn process_result_queue(&mut self) {
+    fn process_result_queue(&mut self, ctx: &egui::Context) {
         for i in 0..self.result_queue.len() {
             match self.result_queue[i].try_recv() {
                 Ok(task_result) => {
@@ -42,10 +42,12 @@ impl App {
                         TaskType::Login => self.login_state.handle_task_login(
                             task_result,
                             &mut self.chat_state,
-                            &mut self.current_page
+                            &mut self.current_page,
+                            ctx
                         ),
                         TaskType::CreateAccount => self.create_account_state.handle_task_create_account(task_result),
-                        TaskType::FetchContactData =>  self.chat_state.handle_task_fetch_contact_data(task_result),
+                        TaskType::FetchContactData => self.chat_state.handle_task_fetch_contact_data(task_result),
+                        TaskType::SearchUser => println!("{}", task_result.response)
                     }
 
                     self.result_queue.swap_remove(i);
@@ -78,6 +80,6 @@ impl eframe::App for App {
             )
         }
 
-        self.process_result_queue();
+        self.process_result_queue(ctx);
     }
 }

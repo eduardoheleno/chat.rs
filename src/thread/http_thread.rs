@@ -1,7 +1,7 @@
 use crate::http::HttpClient;
 use crate::task::{Task, TaskResult};
 use std::collections::VecDeque;
-use std::sync::mpsc::{Sender, Receiver};
+use std::sync::mpsc::{self, Sender, Receiver};
 
 pub struct TaskWrapper {
     task: Box<dyn Task>,
@@ -9,8 +9,9 @@ pub struct TaskWrapper {
 }
 
 impl TaskWrapper {
-    pub fn new(task: Box<dyn Task>, result_channel: Sender<TaskResult>) -> Self {
-        Self { task, result_channel }
+    pub fn new(task: Box<dyn Task>) -> (Self, Receiver<TaskResult>) {
+        let (task_channel_sender, task_channel_receiver) = mpsc::channel();
+        (Self { task, result_channel: task_channel_sender }, task_channel_receiver)
     }
 }
 

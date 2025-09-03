@@ -4,7 +4,8 @@ use create_account_task::PrivateKeyParams;
 pub enum TaskType {
     Login,
     CreateAccount,
-    FetchContactData
+    FetchContactData,
+    SearchUser
 }
 
 pub struct TaskResult {
@@ -32,3 +33,4 @@ pub trait Task: Send {
 pub mod login_task;
 pub mod create_account_task;
 pub mod fetch_contact_data_task;
+pub mod search_user_task;

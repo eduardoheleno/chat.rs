@@ -18,7 +18,8 @@ pub struct Contact {
 #[derive(Serialize, Deserialize)]
 pub struct ContactUserJSON {
     pub id: u64,
-    pub email: String
+    pub email: String,
+    pub public_key: String
 }
 
 #[derive(Serialize, Deserialize)]
@@ -36,7 +37,7 @@ pub struct ContactInfo {
     pub contact: Contact,
     pub contact_user: ContactUser,
     pub chat_id: Option<u64>,
-    pub cipher: Option<XChaCha20Poly1305>
+    pub cipher: XChaCha20Poly1305
 }
 
 pub mod login;

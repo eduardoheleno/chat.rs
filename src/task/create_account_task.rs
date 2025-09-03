@@ -27,8 +27,8 @@ impl PrivateKeyParams {
 
 impl Task for CreateAccountTask {
     fn exec(&self, http_client: &crate::http::HttpClient) -> Result<TaskResult, std::io::Error> {
-        let keypair = generate_assymetric_keypair();
-        let public_key_bytes = keypair.public_key.as_bytes();
+        let (private_key, public_key) = generate_assymetric_keypair();
+        let public_key_bytes = public_key.as_bytes();
 
         let body = json!({
             "email": self.email,
@@ -39,7 +39,7 @@ impl Task for CreateAccountTask {
         let response = http_client.post("user/create", Some(body), None);
         match response {
             Ok(r) => {
-                let private_key_params = PrivateKeyParams::new(self.email.clone(), keypair.private_key);
+                let private_key_params = PrivateKeyParams::new(self.email.clone(), private_key);
                 let result = TaskResult::new(
                     r.status().as_u16(),
                     r.text().unwrap(),

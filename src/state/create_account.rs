@@ -3,7 +3,7 @@ use crate::thread::http_thread::TaskWrapper;
 use crate::task::create_account_task::CreateAccountTask;
 use crate::task::TaskResult;
 use crate::state::Page;
-use crate::util::keyring_handler::{save_private_key};
+use crate::util::keyring_handler::save_private_key;
 use serde::{Deserialize, Serialize};
 use egui::{
     RichText,
@@ -99,12 +99,7 @@ impl CreateAccountState {
                                     self.email.to_owned(),
                                     self.password.to_owned()
                                 );
-
-                                let (task_channel_sender, task_channel_receiver) = mpsc::channel();
-                                let task_wrapper = TaskWrapper::new(
-                                    Box::new(create_account_task),
-                                    task_channel_sender
-                                );
+                                let (task_wrapper, task_channel_receiver) = TaskWrapper::new(Box::new(create_account_task));
 
                                 http_thread.send(task_wrapper).unwrap();
                                 result_queue.push(task_channel_receiver);
