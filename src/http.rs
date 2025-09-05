@@ -32,8 +32,19 @@ impl HttpClient {
             .send()
     }
 
-    // pub fn get(&self, path: &str, headers: Option<HeaderMap>) -> Result<Response, Error> {
-    //     let full_url = self.base_url.join(path).expect("Bad path");
-    //     full_url.set_query()
-    // }
+    pub fn get(&self, path: &str, query_params: Option<Vec<String>>, headers: Option<HeaderMap>) -> Result<Response, Error> {
+        let mut full_url = self.base_url.join(path).expect("Bad path");
+        if let Some(query_params) = query_params {
+            for query in query_params {
+                full_url.set_query(Some(&query));
+            }
+        }
+
+        let mut request_builder = self.http_client.get(full_url);
+        if let Some(h) = headers {
+            request_builder = request_builder.headers(h);
+        }
+
+        request_builder.send()
+    }
 }

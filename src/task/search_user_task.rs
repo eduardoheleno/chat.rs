@@ -1,5 +1,12 @@
 use super::{Task, TaskResult, TaskType};
 use reqwest::header::{HeaderMap, HeaderValue};
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize)]
+pub struct SearchUserResponse {
+    pub id: u64,
+    pub email: String
+}
 
 pub struct SearchUserTask {
     search_param: String,
@@ -14,11 +21,12 @@ impl SearchUserTask {
 
 impl Task for SearchUserTask {
     fn exec(&self, http_client: &crate::http::HttpClient) -> Result<super::TaskResult, std::io::Error> {
-        let url = format!("user/search?email={}", self.search_param);
         let mut headers = HeaderMap::new();
         headers.insert("authToken", HeaderValue::from_str(&self.token).unwrap());
 
-        let response = http_client.post(&url, None, Some(headers));
+        let query = vec![format!("email={}", self.search_param)];
+
+        let response = http_client.get("user/search", Some(query), Some(headers));
         match response {
             Ok(r) => {
                 let result = TaskResult::new(

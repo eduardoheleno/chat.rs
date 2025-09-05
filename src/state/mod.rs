@@ -10,8 +10,8 @@ pub enum Page {
 #[derive(Serialize, Deserialize)]
 pub struct Contact {
     pub id: u64,
-    pub user1_id: u64,
-    pub user2_id: u64,
+    pub sender_id: u64,
+    pub receiver_id: u64,
     pub status: String
 }
 

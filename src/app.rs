@@ -47,7 +47,8 @@ impl App {
                         ),
                         TaskType::CreateAccount => self.create_account_state.handle_task_create_account(task_result),
                         TaskType::FetchContactData => self.chat_state.handle_task_fetch_contact_data(task_result),
-                        TaskType::SearchUser => println!("{}", task_result.response)
+                        TaskType::SearchUser => self.chat_state.handle_task_search_user(task_result),
+                        TaskType::SendInviteContact => self.chat_state.handle_task_send_invite_contact(task_result),
                     }
 
                     self.result_queue.swap_remove(i);

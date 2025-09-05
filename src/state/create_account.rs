@@ -10,7 +10,7 @@ use egui::{
     TextEdit,
     Color32
 };
-use std::sync::mpsc::{self, Sender, Receiver};
+use std::sync::mpsc::{Sender, Receiver};
 
 #[derive(Serialize, Deserialize)]
 struct HttpResponse {
