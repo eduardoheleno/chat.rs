@@ -7,8 +7,8 @@ use crate::util::keyring_handler::get_private_key;
 use crate::util::encryption::generate_cipher;
 use super::ContactInfoJSON;
 use super::ContactInfo;
-use super::ContactUser;
 use super::chat::ChatState;
+use super::InviteMessage;
 use base64::prelude::*;
 use x25519_dalek::{StaticSecret, PublicKey};
 use egui::{
@@ -28,7 +28,9 @@ struct HttpResponseError {
 struct HttpResponseSuccess {
     token: String,
     user_id: u64,
-    contacts: Vec<ContactInfoJSON>
+    contacts: Vec<ContactInfoJSON>,
+    pending_sent_invites: Vec<InviteMessage>,
+    pending_received_invites: Vec<InviteMessage>
 }
 
 pub struct LoginState {
@@ -131,29 +133,26 @@ impl LoginState {
         let parsed_success: HttpResponseSuccess = serde_json::from_str(task_result.response.as_ref()).unwrap();
         let parsed_contacts = parsed_success.contacts.into_iter().map(|contact| {
             let contact_public_key_bytes: [u8; 32] = BASE64_STANDARD
-                .decode(contact.contact_user.public_key)
+                .decode(contact.contact_public_key.clone())
                 .unwrap()
                 .try_into()
                 .unwrap();
             let contact_public_key = PublicKey::from(contact_public_key_bytes);
             let cipher = generate_cipher(contact_public_key, private_key.clone());
 
-            let contact_user = ContactUser {
-                id: contact.contact_user.id,
-                email: contact.contact_user.email
-            };
-
+            // TODO: send chat_id on login
             ContactInfo {
-                contact: contact.contact,
-                contact_user,
-                chat_id: None,
-                cipher
+                contact,
+                cipher,
+                chat_id: None
             }
         }).collect();
 
         chat_state.contacts = parsed_contacts;
         chat_state.token = parsed_success.token;
         chat_state.user_id = parsed_success.user_id;
+        chat_state.sent_invites = parsed_success.pending_sent_invites;
+        chat_state.received_invites = parsed_success.pending_received_invites;
         chat_state.private_key = Some(private_key);
 
         match chat_state.connect_websocket(ctx) {

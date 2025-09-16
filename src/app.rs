@@ -49,6 +49,7 @@ impl App {
                         TaskType::FetchContactData => self.chat_state.handle_task_fetch_contact_data(task_result),
                         TaskType::SearchUser => self.chat_state.handle_task_search_user(task_result),
                         TaskType::SendInviteContact => self.chat_state.handle_task_send_invite_contact(task_result),
+                        TaskType::AcceptInviteContact => self.chat_state.handle_task_accept_invite_contact(task_result, ctx)
                     }
 
                     self.result_queue.swap_remove(i);

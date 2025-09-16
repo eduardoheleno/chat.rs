@@ -34,14 +34,16 @@ pub struct WsInviteMessage {
 #[derive(Serialize, Deserialize)]
 pub enum MessageType {
     Content,
-    Invite
+    Invite,
+    InviteAccepted
 }
 
 impl MessageType {
     pub fn as_str(self) -> String {
         match self {
             Self::Content => "Content".to_string(),
-            Self::Invite => "Invite".to_string()
+            Self::Invite => "Invite".to_string(),
+            Self::InviteAccepted => "InviteAccepted".to_string()
         }
     }
 }

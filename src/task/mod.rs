@@ -7,7 +7,8 @@ pub enum TaskType {
     CreateAccount,
     FetchContactData,
     SearchUser,
-    SendInviteContact
+    SendInviteContact,
+    AcceptInviteContact
 }
 
 pub struct TaskResult {
@@ -42,3 +43,4 @@ pub mod create_account_task;
 pub mod fetch_contact_data_task;
 pub mod search_user_task;
 pub mod send_invite_contact_task;
+pub mod accept_invite_contact_task;

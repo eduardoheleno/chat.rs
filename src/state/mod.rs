@@ -8,36 +8,38 @@ pub enum Page {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct Contact {
-    pub id: u64,
-    pub sender_id: u64,
-    pub receiver_id: u64,
-    pub status: String
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct ContactUserJSON {
-    pub id: u64,
-    pub email: String,
-    pub public_key: String
-}
-
-#[derive(Serialize, Deserialize)]
 pub struct ContactInfoJSON {
-    pub contact: Contact,
-    pub contact_user: ContactUserJSON
-}
-
-pub struct ContactUser {
     pub id: u64,
-    pub email: String
+    pub contact_id: u64,
+    pub contact_email: String,
+    pub contact_public_key: String
 }
 
 pub struct ContactInfo {
-    pub contact: Contact,
-    pub contact_user: ContactUser,
+    pub contact: ContactInfoJSON,
     pub chat_id: Option<u64>,
     pub cipher: XChaCha20Poly1305
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ChatInfoJSON {
+    pub id: u64
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct AcceptInviteJSON {
+    pub chat: ChatInfoJSON,
+    pub contact: ContactInfoJSON
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct InviteMessage {
+    pub id: u64,
+    pub sender_id: u64,
+    pub sender_email: String,
+    pub receiver_id: u64,
+    pub receiver_email: String,
+    pub status: String
 }
 
 pub mod login;

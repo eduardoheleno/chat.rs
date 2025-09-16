@@ -4,8 +4,9 @@ use crate::task::TaskResult;
 use crate::task::search_user_task::SearchUserTask;
 use crate::task::search_user_task::SearchUserResponse;
 use crate::task::send_invite_contact_task::SendInviteContactTask;
+use crate::task::accept_invite_contact_task::AcceptInviteContactTask;
 use crate::task::GenericResultError;
-use crate::util::encryption::encrypt_plain_text;
+use crate::util::encryption::{encrypt_plain_text, generate_cipher};
 use crate::thread::websocket_thread::{
     init_websocket,
     init_websocket_thread,
@@ -14,10 +15,13 @@ use crate::thread::websocket_thread::{
     MessageType
 };
 use super::ContactInfo;
+use super::AcceptInviteJSON;
+use super::InviteMessage;
+use base64::prelude::*;
 use serde_json::Value;
 use tungstenite::{WebSocket, stream::MaybeTlsStream};
-use x25519_dalek::StaticSecret;
 use serde::{Deserialize, Serialize};
+use x25519_dalek::{StaticSecret, PublicKey};
 use chacha20poly1305::aead::generic_array::GenericArray;
 use chacha20poly1305::XNonce;
 use chacha20poly1305::aead::Aead;
@@ -47,6 +51,13 @@ pub struct ChatState {
     pub clicked_invite_contact_id: Option<u64>,
     pub clicked_invite_contact_email: Option<String>,
     pub is_send_invite_loading: bool,
+
+    pub received_invites: Vec<InviteMessage>,
+    pub sent_invites: Vec<InviteMessage>,
+    pub accepted_contact_id: Option<u64>,
+
+    pub show_invites_modal: bool,
+    pub is_loading_accept_invite: bool,
 
     pub message_thread_sender: OnceCell<Sender<String>>,
     pub message_ui_receiver: OnceCell<Receiver<String>>
@@ -89,6 +100,13 @@ impl Default for ChatState {
             clicked_invite_contact_email: None,
             is_send_invite_loading: false,
 
+            received_invites: Vec::new(),
+            sent_invites: Vec::new(),
+            accepted_contact_id: None,
+
+            show_invites_modal: false,
+            is_loading_accept_invite: false,
+
             message_thread_sender: OnceCell::new(),
             message_ui_receiver: OnceCell::new()
         }
@@ -108,13 +126,18 @@ impl ChatState {
         if self.show_search_modal {
             self.show_search_modal(ctx);
         }
+        if self.show_invites_modal {
+            self.show_invites_modal(ctx);
+        }
 
         egui::SidePanel::left("left_panel")
             .resizable(false)
             .show(ctx, |ui| {
                 ui.add_space(5.);
                 ui.horizontal_wrapped(|ui| {
-                    ui.button("Invites ( )");
+                    if ui.button(format!("Invites ( {} )", self.received_invites.len())).clicked() {
+                        self.show_invites_modal = true;
+                    }
                     if ui.button("Search").clicked() {
                         self.show_search_modal = true;
                     }
@@ -133,16 +156,16 @@ impl ChatState {
                                 for contact in self.contacts.iter() {
                                     egui::Frame::NONE
                                         .show(ui, |ui| {
-                                            let selected = self.current_selected_id == contact.contact_user.id;
+                                            let selected = self.current_selected_id == contact.contact.contact_id;
                                             let response = ui.add(
                                                 egui::Button::selectable(
                                                     selected,
-                                                    egui::RichText::new(contact.contact_user.email.clone())
+                                                    egui::RichText::new(contact.contact.contact_email.clone())
                                                 ).wrap_mode(egui::TextWrapMode::Truncate)
                                             );
                                             if response.clicked() {
-                                                self.clicked_contact_id = Some(contact.contact_user.id);
-                                                self.current_selected_id = contact.contact_user.id;
+                                                self.clicked_contact_id = Some(contact.contact.contact_id);
+                                                self.current_selected_id = contact.contact.contact_id;
                                             }
                                         });
                                 }
@@ -216,7 +239,7 @@ impl ChatState {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.set_height(100.);
 
-                if self.is_search_loading || self.is_send_invite_loading {
+                if self.is_search_loading || self.is_send_invite_loading || self.is_loading_accept_invite {
                     ui.vertical_centered(|ui| {
                         ui.spinner();
                     });
@@ -232,9 +255,19 @@ impl ChatState {
                         ui.label(user.email.clone());
 
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.button("Add").clicked() {
-                                self.clicked_invite_contact_id = Some(user.id);
-                                self.clicked_invite_contact_email = Some(user.email.clone());
+                            if self.sent_invites.iter().find(|i| i.receiver_id == user.id).is_some() {
+                                ui.add_enabled(false, egui::Button::new("Sent"));
+                            } else if let Some(invite) = self.received_invites.iter().find(|i| i.sender_id == user.id) {
+                                if ui.button("Accept").clicked() {
+                                    self.accepted_contact_id = Some(invite.id);
+                                }
+                            } else if let Some(_) = self.contacts.iter().find(|i| i.contact.contact_id == user.id) {
+                                ui.add_enabled(false, egui::Button::new("Added"));
+                            } else {
+                                if ui.button("Add").clicked() {
+                                    self.clicked_invite_contact_id = Some(user.id);
+                                    self.clicked_invite_contact_email = Some(user.email.clone());
+                                }
                             }
                         });
                     });
@@ -250,6 +283,41 @@ impl ChatState {
         });
     }
 
+    fn show_invites_modal(&mut self, ctx: &egui::Context) {
+        egui::Modal::new(egui::Id::new("modal_invite")).show(ctx, |ui| {
+            ui.set_width(250.);
+
+            // TODO: loading feedback
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                ui.set_height(100.);
+
+                if self.received_invites.is_empty() {
+                    ui.label("No received invites.");
+                    return;
+                }
+
+                for invite in self.received_invites.iter() {
+                    ui.horizontal(|ui| {
+                        ui.label(invite.sender_email.clone());
+
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui.button("Accept").clicked() {
+                                self.accepted_contact_id = Some(invite.id);
+                            }
+                        });
+                    });
+                    ui.separator();
+                    ui.add_space(5.);
+                }
+            });
+            ui.separator();
+
+            if ui.button("Close").clicked() {
+                self.show_invites_modal = false;
+            }
+        });
+    }
+
     fn handle_user_interaction(
         &mut self,
         http_thread: &Sender<TaskWrapper>,
@@ -260,6 +328,9 @@ impl ChatState {
         }
         if self.clicked_invite_contact_id.is_some() {
             self.send_invite(http_thread, result_queue);
+        }
+        if self.accepted_contact_id.is_some() {
+            self.accept_invite(http_thread, result_queue);
         }
     }
 
@@ -303,6 +374,25 @@ impl ChatState {
         result_queue.push(task_channel_receiver);
     }
 
+    fn accept_invite(
+        &mut self,
+        http_thread: &Sender<TaskWrapper>,
+        result_queue: &mut Vec<Receiver<TaskResult>>
+    ) {
+        self.is_loading_accept_invite = true;
+
+        let contact_id = self.accepted_contact_id.take().unwrap();
+
+        let accept_invite_contact_task = AcceptInviteContactTask::new(
+            contact_id,
+            self.token.clone()
+        );
+        let (task_wrapper, task_channel_receiver) = TaskWrapper::new(Box::new(accept_invite_contact_task));
+
+        http_thread.send(task_wrapper).unwrap();
+        result_queue.push(task_channel_receiver);
+    }
+
     fn handle_messages(&mut self) {
         // maybe decrypt actions should be outside main thread?
         let message_ui_receiver = self.message_ui_receiver.get().unwrap();
@@ -313,6 +403,8 @@ impl ChatState {
                 self.handle_content_message(msg);
             } else if parsed_msg["type"] == MessageType::Invite.as_str() {
                 self.handle_invite_message(msg);
+            } else if parsed_msg["type"] == MessageType::InviteAccepted.as_str() {
+                self.handle_accept_invite_message(msg);
             }
         }
     }
@@ -321,14 +413,36 @@ impl ChatState {
     fn handle_content_message(&mut self, msg: String) {}
 
     fn handle_invite_message(&mut self, msg: String) {
-        println!("{}", msg);
+        self.received_invites.push(serde_json::from_str(&msg).unwrap());
+    }
+
+    fn handle_accept_invite_message(&mut self, msg: String) {
+        let parsed_msg: AcceptInviteJSON = serde_json::from_str(&msg).unwrap();
+        let private_key = self.private_key.clone().unwrap();
+
+        let contact_public_key_bytes: [u8; 32] = BASE64_STANDARD
+            .decode(parsed_msg.contact.contact_public_key.clone())
+            .unwrap()
+            .try_into()
+            .unwrap();
+        let contact_public_key = PublicKey::from(contact_public_key_bytes);
+        let cipher = generate_cipher(contact_public_key, private_key);
+
+        self.sent_invites.retain(|i| i.id != parsed_msg.contact.id);
+        self.contacts.push(
+            ContactInfo {
+                contact: parsed_msg.contact,
+                cipher,
+                chat_id: Some(parsed_msg.chat.id)
+            }
+        );
     }
 
     fn get_mut_selected_contact(&mut self) -> &mut ContactInfo {
         self.contacts.iter_mut()
             .find(
                 |contact_info|
-                contact_info.contact_user.id == self.current_selected_id
+                contact_info.contact.contact_id == self.current_selected_id
             ).unwrap()
     }
 
@@ -347,9 +461,9 @@ impl ChatState {
         // but it is what i am doing for now
         let ws_content_message = WsContentMessage {
             sender_id: user_id,
-            receiver_id: contact.contact_user.id.clone(),
+            receiver_id: contact.contact.contact_id.clone(),
             chat_id: 1,
-            receiver_email: contact.contact_user.email.clone(),
+            receiver_email: contact.contact.contact_email.clone(),
             r#type: MessageType::Content,
             content: encrypted_content,
             nonce
@@ -360,19 +474,6 @@ impl ChatState {
         let message_thread_sender = self.message_thread_sender.get().unwrap();
         message_thread_sender.send(ws_content_message_json).unwrap();
     }
-
-    // fn send_invite_message(&mut self, target_user_id: u64, target_user_email: String) {
-    //     let ws_invite_message = WsInviteMessage {
-    //         sender_id: self.user_id.clone(),
-    //         receiver_id: target_user_id,
-    //         receiver_email: target_user_email,
-    //         r#type: MessageType::Invite
-    //     };
-    //     let ws_invite_message_json = serde_json::to_string(&ws_invite_message).unwrap();
-
-    //     let message_thread_sender = self.message_thread_sender.get().unwrap();
-    //     message_thread_sender.send(ws_invite_message_json).unwrap();
-    // }
 
     pub fn connect_websocket(&mut self, ctx: &egui::Context) -> Result<(), std::io::Error> {
         match init_websocket(self.token.clone()) {
@@ -394,7 +495,6 @@ impl ChatState {
 
         self.message_thread_sender.set(message_thread_sender).unwrap();
         self.message_ui_receiver.set(message_ui_receiver).unwrap();
-
     }
 
     fn handle_task_error(&mut self, response: String) {
@@ -429,6 +529,42 @@ impl ChatState {
 
     pub fn handle_task_send_invite_contact(&mut self, task_result: TaskResult) {
         self.is_send_invite_loading = false;
-        println!("{}", task_result.response);
+
+        if task_result.status_code >= 400 {
+            self.handle_task_error(task_result.response);
+            return
+        }
+
+        self.sent_invites.push(serde_json::from_str(&task_result.response).unwrap());
+    }
+
+    pub fn handle_task_accept_invite_contact(&mut self, task_result: TaskResult, ctx: &egui::Context) {
+        self.is_loading_accept_invite = false;
+
+        if task_result.status_code >= 400 {
+            self.handle_task_error(task_result.response);
+            return
+        }
+
+        let response: AcceptInviteJSON = serde_json::from_str(&task_result.response).unwrap();
+        let private_key = self.private_key.clone().unwrap();
+
+        let contact_public_key_bytes: [u8; 32] = BASE64_STANDARD
+            .decode(response.contact.contact_public_key.clone())
+            .unwrap()
+            .try_into()
+            .unwrap();
+        let contact_public_key = PublicKey::from(contact_public_key_bytes);
+        let cipher = generate_cipher(contact_public_key, private_key);
+
+        self.received_invites.retain(|i| i.id != response.contact.id);
+        self.contacts.push(
+            ContactInfo {
+                contact: response.contact,
+                cipher,
+                chat_id: Some(response.chat.id)
+            }
+        );
+        ctx.request_repaint();
     }
 }
