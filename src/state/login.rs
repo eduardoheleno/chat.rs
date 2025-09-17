@@ -8,7 +8,7 @@ use crate::util::encryption::generate_cipher;
 use super::ContactInfoJSON;
 use super::ContactInfo;
 use super::chat::ChatState;
-use super::InviteMessage;
+use crate::thread::websocket_thread::InviteMessage;
 use base64::prelude::*;
 use x25519_dalek::{StaticSecret, PublicKey};
 use egui::{
@@ -140,11 +140,9 @@ impl LoginState {
             let contact_public_key = PublicKey::from(contact_public_key_bytes);
             let cipher = generate_cipher(contact_public_key, private_key.clone());
 
-            // TODO: send chat_id on login
             ContactInfo {
                 contact,
-                cipher,
-                chat_id: None
+                cipher
             }
         }).collect();
 

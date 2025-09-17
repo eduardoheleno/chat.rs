@@ -10,13 +10,12 @@ use crate::util::encryption::{encrypt_plain_text, generate_cipher};
 use crate::thread::websocket_thread::{
     init_websocket,
     init_websocket_thread,
-    WsContentMessage,
-    WsInviteMessage,
+    ContentMessage,
+    InviteMessage,
+    AcceptInvite,
     MessageType
 };
 use super::ContactInfo;
-use super::AcceptInviteJSON;
-use super::InviteMessage;
 use base64::prelude::*;
 use serde_json::Value;
 use tungstenite::{WebSocket, stream::MaybeTlsStream};
@@ -172,13 +171,6 @@ impl ChatState {
                             }
                         );
                     });
-
-                    if ui.button("debug").clicked() {
-                        // println!("{}", self.typed_message);
-                        self.send_content_message();
-                        // self.test();
-                        // self.modal_error = "Teste".to_owned();
-                    }
                 });
             });
 
@@ -205,7 +197,7 @@ impl ChatState {
         });
 
         self.handle_messages();
-        self.handle_user_interaction(http_thread, result_queue);
+        self.handle_user_interaction(http_thread, result_queue, ctx);
     }
 
     fn show_error_modal(&mut self, ctx: &egui::Context) {
@@ -321,8 +313,10 @@ impl ChatState {
     fn handle_user_interaction(
         &mut self,
         http_thread: &Sender<TaskWrapper>,
-        result_queue: &mut Vec<Receiver<TaskResult>>
+        result_queue: &mut Vec<Receiver<TaskResult>>,
+        ctx: &egui::Context
     ) {
+        self.handle_user_enter(ctx);
         if self.should_search {
             self.search_user(http_thread, result_queue);
         }
@@ -332,6 +326,16 @@ impl ChatState {
         if self.accepted_contact_id.is_some() {
             self.accept_invite(http_thread, result_queue);
         }
+    }
+
+    fn handle_user_enter(&mut self, ctx: &egui::Context) {
+        ctx.input(|inp| {
+            if inp.key_pressed(egui::Key::Enter) &&
+                self.typed_message.len() > 0 &&
+                self.current_selected_id > 0 {
+                self.send_content_message();
+            }
+        });
     }
 
     fn search_user(
@@ -396,7 +400,6 @@ impl ChatState {
     fn handle_messages(&mut self) {
         // maybe decrypt actions should be outside main thread?
         let message_ui_receiver = self.message_ui_receiver.get().unwrap();
-        // TODO: parse msg which now is a string
         if let Ok(msg) = message_ui_receiver.try_recv() {
             let parsed_msg: Value = serde_json::from_str(&msg).unwrap();
             if parsed_msg["type"] == MessageType::Content.as_str() {
@@ -410,14 +413,21 @@ impl ChatState {
     }
 
     // TODO
-    fn handle_content_message(&mut self, msg: String) {}
+    fn handle_content_message(&mut self, msg: String) {
+        let received_message: ContentMessage = serde_json::from_str(&msg).unwrap();
+
+        let contact = self.contacts.iter().find(|c| c.contact.contact_id == received_message.sender_id).unwrap();
+        let nonce: XNonce = *GenericArray::from_slice(&received_message.nonce);
+        let decrypted_message = contact.cipher.decrypt(&nonce, received_message.content.as_ref()).unwrap();
+        println!("{}", String::from_utf8(decrypted_message).unwrap());
+    }
 
     fn handle_invite_message(&mut self, msg: String) {
         self.received_invites.push(serde_json::from_str(&msg).unwrap());
     }
 
     fn handle_accept_invite_message(&mut self, msg: String) {
-        let parsed_msg: AcceptInviteJSON = serde_json::from_str(&msg).unwrap();
+        let parsed_msg: AcceptInvite = serde_json::from_str(&msg).unwrap();
         let private_key = self.private_key.clone().unwrap();
 
         let contact_public_key_bytes: [u8; 32] = BASE64_STANDARD
@@ -432,8 +442,7 @@ impl ChatState {
         self.contacts.push(
             ContactInfo {
                 contact: parsed_msg.contact,
-                cipher,
-                chat_id: Some(parsed_msg.chat.id)
+                cipher
             }
         );
     }
@@ -447,10 +456,6 @@ impl ChatState {
     }
 
     fn send_content_message(&mut self) {
-        if self.typed_message.len() <= 0 || self.current_selected_id <= 0 {
-            return;
-        }
-
         let typed_message = self.typed_message.clone();
         let user_id = self.user_id.clone();
         let contact = self.get_mut_selected_contact();
@@ -459,20 +464,21 @@ impl ChatState {
 
         // i dont know if its safe to send bytes serialized to JSON format
         // but it is what i am doing for now
-        let ws_content_message = WsContentMessage {
+        let ws_content_message = ContentMessage {
             sender_id: user_id,
             receiver_id: contact.contact.contact_id.clone(),
-            chat_id: 1,
+            chat_id: contact.contact.chat_id,
             receiver_email: contact.contact.contact_email.clone(),
             r#type: MessageType::Content,
             content: encrypted_content,
             nonce
         };
         let ws_content_message_json = serde_json::to_string(&ws_content_message).unwrap();
-        println!("{}", ws_content_message_json);
 
         let message_thread_sender = self.message_thread_sender.get().unwrap();
         message_thread_sender.send(ws_content_message_json).unwrap();
+
+        self.typed_message.clear();
     }
 
     pub fn connect_websocket(&mut self, ctx: &egui::Context) -> Result<(), std::io::Error> {
@@ -501,18 +507,6 @@ impl ChatState {
         let parsed_error: GenericResultError = serde_json::from_str(&response).unwrap();
         self.modal_error = parsed_error.message;
         return;
-    }
-
-    pub fn handle_task_fetch_contact_data(&mut self, task_result: TaskResult) {
-        if task_result.status_code >= 400 {
-            self.handle_task_error(task_result.response);
-            return;
-        }
-
-        let parsed_response: FetchContactDataSuccess = serde_json::from_str(task_result.response.as_ref()).unwrap();
-        let target_contact = self.get_mut_selected_contact();
-
-        target_contact.chat_id = Some(parsed_response.chat_with_messages.chat_id);
     }
 
     pub fn handle_task_search_user(&mut self, task_result: TaskResult) {
@@ -546,7 +540,7 @@ impl ChatState {
             return
         }
 
-        let response: AcceptInviteJSON = serde_json::from_str(&task_result.response).unwrap();
+        let response: AcceptInvite = serde_json::from_str(&task_result.response).unwrap();
         let private_key = self.private_key.clone().unwrap();
 
         let contact_public_key_bytes: [u8; 32] = BASE64_STANDARD
@@ -561,8 +555,7 @@ impl ChatState {
         self.contacts.push(
             ContactInfo {
                 contact: response.contact,
-                cipher,
-                chat_id: Some(response.chat.id)
+                cipher
             }
         );
         ctx.request_repaint();

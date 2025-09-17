@@ -1,3 +1,4 @@
+use crate::state::{ChatInfoJSON, ContactInfoJSON};
 use http::Uri;
 use std::net::TcpStream;
 use std::sync::mpsc::{self, Sender, Receiver};
@@ -13,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use eframe::egui;
 
 #[derive(Serialize, Deserialize)]
-pub struct WsContentMessage {
+pub struct ContentMessage {
     pub sender_id: u64,
     pub receiver_id: u64,
     pub chat_id: u64,
@@ -24,11 +25,18 @@ pub struct WsContentMessage {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct WsInviteMessage {
+pub struct InviteMessage {
+    pub id: u64,
     pub sender_id: u64,
+    pub sender_email: String,
     pub receiver_id: u64,
-    pub receiver_email: String,
-    pub r#type: MessageType
+    pub receiver_email: String
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct AcceptInvite {
+    pub chat: ChatInfoJSON,
+    pub contact: ContactInfoJSON
 }
 
 #[derive(Serialize, Deserialize)]
