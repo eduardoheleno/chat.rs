@@ -142,7 +142,8 @@ impl LoginState {
 
             ContactInfo {
                 contact,
-                cipher
+                cipher,
+                messages: Vec::new()
             }
         }).collect();
 

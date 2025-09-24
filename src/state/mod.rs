@@ -16,9 +16,15 @@ pub struct ContactInfoJSON {
     pub contact_public_key: String
 }
 
+pub struct Message {
+    pub content: String,
+    pub sender_id: u64
+}
+
 pub struct ContactInfo {
     pub contact: ContactInfoJSON,
-    pub cipher: XChaCha20Poly1305
+    pub cipher: XChaCha20Poly1305,
+    pub messages: Vec<Message>
 }
 
 #[derive(Serialize, Deserialize)]

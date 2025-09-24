@@ -17,6 +17,7 @@ use eframe::egui;
 pub struct ContentMessage {
     pub sender_id: u64,
     pub receiver_id: u64,
+    pub target_id: u64,
     pub chat_id: u64,
     pub receiver_email: String,
     pub r#type: MessageType,

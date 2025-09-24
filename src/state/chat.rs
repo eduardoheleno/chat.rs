@@ -16,6 +16,7 @@ use crate::thread::websocket_thread::{
     MessageType
 };
 use super::ContactInfo;
+use super::Message;
 use base64::prelude::*;
 use serde_json::Value;
 use tungstenite::{WebSocket, stream::MaybeTlsStream};
@@ -184,20 +185,65 @@ impl ChatState {
                 ..Default::default()
             })
             .show(ctx, |ui| {
-                egui::TextEdit::multiline(&mut self.typed_message)
+                let response = ui.add(
+                  egui::TextEdit::multiline(&mut self.typed_message)
                     .hint_text("Type your message")
                     .desired_width(ui.available_width())
-                    .show(ui);
+                    .lock_focus(true)
+                    .desired_rows(2)
+                );
+
+                if
+                    response.has_focus() &&
+                    ui.input(|i| i.key_pressed(egui::Key::Enter))
+                {
+                    self.send_content_message();
+                }
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.vertical(|ui| {
+            egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.heading("Chat");
+
+                let user_id = self.user_id;
+                if let Some(contact) = self.get_mut_selected_contact() {
+                    for message in &contact.messages {
+                        if message.sender_id == user_id {
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                                egui::Frame::NONE
+                                    .fill(egui::Color32::from_rgb(0, 93, 128))
+                                    .corner_radius(2.)
+                                    .inner_margin(8.)
+                                    .show(ui, |ui| {
+                                        ui.set_max_width(ui.available_width() * 0.6);
+                                        let label = egui::Label::new(
+                                            egui::RichText::new(&message.content).size(15.0)
+                                        ).wrap();
+                                        ui.add(label);
+                                    });
+                            });
+                        } else {
+                            ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
+                                egui::Frame::NONE
+                                    .fill(egui::Color32::from_rgb(18, 19, 18))
+                                    .corner_radius(2.)
+                                    .inner_margin(8.)
+                                    .show(ui, |ui| {
+                                        ui.set_max_width(ui.available_width() * 0.6);
+                                        let label = egui::Label::new(
+                                            egui::RichText::new(&message.content).size(15.0)
+                                        ).wrap();
+                                        ui.add(label);
+                                    });
+                            });
+                        }
+                    }
+                }
             });
         });
 
         self.handle_messages();
-        self.handle_user_interaction(http_thread, result_queue, ctx);
+        self.handle_user_interaction(http_thread, result_queue);
     }
 
     fn show_error_modal(&mut self, ctx: &egui::Context) {
@@ -246,7 +292,7 @@ impl ChatState {
                      ui.horizontal(|ui| {
                         ui.label(user.email.clone());
 
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Max), |ui| {
                             if self.sent_invites.iter().find(|i| i.receiver_id == user.id).is_some() {
                                 ui.add_enabled(false, egui::Button::new("Sent"));
                             } else if let Some(invite) = self.received_invites.iter().find(|i| i.sender_id == user.id) {
@@ -313,10 +359,8 @@ impl ChatState {
     fn handle_user_interaction(
         &mut self,
         http_thread: &Sender<TaskWrapper>,
-        result_queue: &mut Vec<Receiver<TaskResult>>,
-        ctx: &egui::Context
+        result_queue: &mut Vec<Receiver<TaskResult>>
     ) {
-        self.handle_user_enter(ctx);
         if self.should_search {
             self.search_user(http_thread, result_queue);
         }
@@ -326,16 +370,6 @@ impl ChatState {
         if self.accepted_contact_id.is_some() {
             self.accept_invite(http_thread, result_queue);
         }
-    }
-
-    fn handle_user_enter(&mut self, ctx: &egui::Context) {
-        ctx.input(|inp| {
-            if inp.key_pressed(egui::Key::Enter) &&
-                self.typed_message.len() > 0 &&
-                self.current_selected_id > 0 {
-                self.send_content_message();
-            }
-        });
     }
 
     fn search_user(
@@ -416,10 +450,16 @@ impl ChatState {
     fn handle_content_message(&mut self, msg: String) {
         let received_message: ContentMessage = serde_json::from_str(&msg).unwrap();
 
-        let contact = self.contacts.iter().find(|c| c.contact.contact_id == received_message.sender_id).unwrap();
+        let contact = self.contacts.iter_mut().find(|c| c.contact.contact_id == received_message.sender_id).unwrap();
         let nonce: XNonce = *GenericArray::from_slice(&received_message.nonce);
-        let decrypted_message = contact.cipher.decrypt(&nonce, received_message.content.as_ref()).unwrap();
-        println!("{}", String::from_utf8(decrypted_message).unwrap());
+        let decrypted_message_bytes = contact.cipher.decrypt(&nonce, received_message.content.as_ref()).unwrap();
+
+        contact.messages.push(
+            Message {
+                sender_id: received_message.sender_id,
+                content: String::from_utf8(decrypted_message_bytes).unwrap()
+            }
+        );
     }
 
     fn handle_invite_message(&mut self, msg: String) {
@@ -442,31 +482,41 @@ impl ChatState {
         self.contacts.push(
             ContactInfo {
                 contact: parsed_msg.contact,
-                cipher
+                cipher,
+                messages: Vec::new()
             }
         );
     }
 
-    fn get_mut_selected_contact(&mut self) -> &mut ContactInfo {
+    fn get_mut_selected_contact(&mut self) -> Option<&mut ContactInfo> {
         self.contacts.iter_mut()
             .find(
                 |contact_info|
                 contact_info.contact.contact_id == self.current_selected_id
-            ).unwrap()
+            )
     }
 
     fn send_content_message(&mut self) {
-        let typed_message = self.typed_message.clone();
+        let typed_message = self.typed_message.clone().replace("\n", "");
         let user_id = self.user_id.clone();
-        let contact = self.get_mut_selected_contact();
+        let contact = self.get_mut_selected_contact().unwrap();
+
+        contact.messages.push(
+            Message {
+                content: typed_message.clone(),
+                sender_id: user_id
+            }
+        );
 
         let (encrypted_content, nonce) = encrypt_plain_text(&contact.cipher, typed_message);
 
         // i dont know if its safe to send bytes serialized to JSON format
         // but it is what i am doing for now
+        let receiver_id = contact.contact.contact_id.clone();
         let ws_content_message = ContentMessage {
             sender_id: user_id,
-            receiver_id: contact.contact.contact_id.clone(),
+            receiver_id,
+            target_id: receiver_id,
             chat_id: contact.contact.chat_id,
             receiver_email: contact.contact.contact_email.clone(),
             r#type: MessageType::Content,
@@ -555,7 +605,8 @@ impl ChatState {
         self.contacts.push(
             ContactInfo {
                 contact: response.contact,
-                cipher
+                cipher,
+                messages: Vec::new()
             }
         );
         ctx.request_repaint();
