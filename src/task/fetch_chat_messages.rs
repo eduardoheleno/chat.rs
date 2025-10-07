@@ -1,35 +1,36 @@
 use super::{Task, TaskResult, TaskType};
-use serde_json::json;
 use reqwest::header::{HeaderMap, HeaderValue};
 
-pub struct FetchContactDataTask {
-    contact_id: u64,
+pub struct FetchChatMessagesTask {
+    chat_id: u64,
+    offset: u64,
     token: String
 }
 
-impl FetchContactDataTask {
-    pub fn new(contact_id: u64, token: String) -> Self {
-        Self { contact_id, token }
+impl FetchChatMessagesTask {
+    pub fn new(chat_id: u64, offset: u64, token: String) -> Self {
+        Self {
+            chat_id,
+            offset,
+            token
+        }
     }
 }
 
-impl Task for FetchContactDataTask {
+impl Task for FetchChatMessagesTask {
     fn exec(&self, http_client: &crate::http::HttpClient) -> Result<TaskResult, std::io::Error> {
-        let body = json!({
-            "contact_id": self.contact_id
-        });
-
         let mut headers = HeaderMap::new();
         headers.insert("authToken", HeaderValue::from_str(&self.token).unwrap());
 
-        let response = http_client.post("contact/get-public-key", Some(body), Some(headers));
+        let path = format!("chat_api/message/{}/{}", self.chat_id, self.offset);
+        let response = http_client.get(&path, None, Some(headers));
         match response {
             Ok(r) => {
                 let result = TaskResult::new(
                     r.status().as_u16(),
                     r.text().unwrap(),
                     None,
-                    TaskType::FetchContactData
+                    TaskType::FetchChatMessages
                 );
                 Ok(result)
             },

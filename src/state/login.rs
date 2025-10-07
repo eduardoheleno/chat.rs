@@ -18,6 +18,7 @@ use egui::{
 };
 use serde::{Deserialize, Serialize};
 use std::sync::mpsc::{Sender, Receiver};
+use std::collections::LinkedList;
 
 #[derive(Serialize, Deserialize)]
 struct HttpResponseError {
@@ -143,7 +144,7 @@ impl LoginState {
             ContactInfo {
                 contact,
                 cipher,
-                messages: Vec::new()
+                messages: LinkedList::new(),
             }
         }).collect();
 

@@ -36,7 +36,7 @@ impl Task for CreateAccountTask {
             "public_key": public_key_bytes
         });
 
-        let response = http_client.post("user/create", Some(body), None);
+        let response = http_client.post("user_api/user/create", Some(body), None);
         match response {
             Ok(r) => {
                 let private_key_params = PrivateKeyParams::new(self.email.clone(), private_key);

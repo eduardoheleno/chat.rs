@@ -5,18 +5,21 @@ use crate::task::search_user_task::SearchUserTask;
 use crate::task::search_user_task::SearchUserResponse;
 use crate::task::send_invite_contact_task::SendInviteContactTask;
 use crate::task::accept_invite_contact_task::AcceptInviteContactTask;
+use crate::task::fetch_chat_messages::FetchChatMessagesTask;
 use crate::task::GenericResultError;
 use crate::util::encryption::{encrypt_plain_text, generate_cipher};
 use crate::thread::websocket_thread::{
     init_websocket,
     init_websocket_thread,
-    ContentMessage,
+    WsContentMessage,
+    ContentMessageWrapper,
     InviteMessage,
     AcceptInvite,
     MessageType
 };
 use super::ContactInfo;
 use super::Message;
+use super::FetchMessage;
 use base64::prelude::*;
 use serde_json::Value;
 use tungstenite::{WebSocket, stream::MaybeTlsStream};
@@ -28,6 +31,7 @@ use chacha20poly1305::aead::Aead;
 use std::cell::OnceCell;
 use std::sync::mpsc::{Sender, Receiver};
 use std::net::TcpStream;
+use std::collections::LinkedList;
 
 pub struct ChatState {
     pub token: String,
@@ -38,6 +42,7 @@ pub struct ChatState {
 
     pub current_selected_id: u64,
     pub clicked_contact_id: Option<u64>,
+    pub is_fetching_messages: bool,
 
     pub modal_error: String,
     pub typed_message: String,
@@ -86,6 +91,7 @@ impl Default for ChatState {
 
             current_selected_id: 0,
             clicked_contact_id: None,
+            is_fetching_messages: false,
 
             modal_error: String::new(),
             typed_message: String::new(),
@@ -206,38 +212,48 @@ impl ChatState {
                 ui.heading("Chat");
 
                 let user_id = self.user_id;
-                if let Some(contact) = self.get_mut_selected_contact() {
-                    for message in &contact.messages {
-                        if message.sender_id == user_id {
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-                                egui::Frame::NONE
-                                    .fill(egui::Color32::from_rgb(0, 93, 128))
-                                    .corner_radius(2.)
-                                    .inner_margin(8.)
-                                    .show(ui, |ui| {
-                                        ui.set_max_width(ui.available_width() * 0.6);
-                                        let label = egui::Label::new(
-                                            egui::RichText::new(&message.content).size(15.0)
-                                        ).wrap();
-                                        ui.add(label);
-                                    });
-                            });
-                        } else {
-                            ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
-                                egui::Frame::NONE
-                                    .fill(egui::Color32::from_rgb(18, 19, 18))
-                                    .corner_radius(2.)
-                                    .inner_margin(8.)
-                                    .show(ui, |ui| {
-                                        ui.set_max_width(ui.available_width() * 0.6);
-                                        let label = egui::Label::new(
-                                            egui::RichText::new(&message.content).size(15.0)
-                                        ).wrap();
-                                        ui.add(label);
-                                    });
-                            });
-                        }
+                if let Some(contact) = self.get_selected_contact() {
+                    if self.is_fetching_messages {
+                        ui.vertical_centered(|ui| {
+                            ui.spinner();
+                        });
                     }
+
+                    for message in &contact.messages {
+                        let is_sender = message.sender_id == user_id;
+
+                        ui.with_layout(
+                            if is_sender {
+                            egui::Layout::right_to_left(egui::Align::Min)
+                        } else {
+                            egui::Layout::left_to_right(egui::Align::Min)
+                        },
+                        |ui| {
+                            egui::Frame::NONE
+                                .fill(if is_sender {
+                                    egui::Color32::from_rgb(0, 93, 128)
+                                } else {
+                                    egui::Color32::from_rgb(18, 19, 18)
+                                })
+                                .corner_radius(2.)
+                                .inner_margin(8.)
+                                .show(ui, |ui| {
+                                    ui.set_max_width(ui.available_width() * 0.6);
+                                    let label = egui::Label::new(
+                                        egui::RichText::new(&message.content).size(15.)
+                                    ).wrap().halign(egui::Align::LEFT);
+                                    ui.add(label);
+                                });
+                        });
+                    }
+
+                    ui.scroll_to_cursor(Some(egui::Align::BOTTOM));
+                } else {
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new("Select a chat to start talking").size(15.)
+                        )
+                    );
                 }
             });
         });
@@ -325,7 +341,6 @@ impl ChatState {
         egui::Modal::new(egui::Id::new("modal_invite")).show(ctx, |ui| {
             ui.set_width(250.);
 
-            // TODO: loading feedback
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.set_height(100.);
 
@@ -361,6 +376,9 @@ impl ChatState {
         http_thread: &Sender<TaskWrapper>,
         result_queue: &mut Vec<Receiver<TaskResult>>
     ) {
+        if self.clicked_contact_id.is_some() {
+            self.fetch_messages(http_thread, result_queue);
+        }
         if self.should_search {
             self.search_user(http_thread, result_queue);
         }
@@ -431,6 +449,34 @@ impl ChatState {
         result_queue.push(task_channel_receiver);
     }
 
+    fn fetch_messages(
+        &mut self,
+        http_thread: &Sender<TaskWrapper>,
+        result_queue: &mut Vec<Receiver<TaskResult>>
+    ) {
+        self.is_fetching_messages = true;
+
+        let _ = self.clicked_contact_id.take().unwrap();
+        let contact = self.get_selected_contact().unwrap();
+
+        let offset = contact.messages.len();
+        if offset <= 20 {
+            let fetch_chat_messages_task = FetchChatMessagesTask::new(
+                contact.contact.chat_id,
+                offset as u64,
+                self.token.clone()
+            );
+            let (task_wrapper, task_channel_receiver) = TaskWrapper::new(
+                Box::new(fetch_chat_messages_task)
+            );
+
+            http_thread.send(task_wrapper).unwrap();
+            result_queue.push(task_channel_receiver);
+        } else {
+            self.is_fetching_messages = false;
+        }
+    }
+
     fn handle_messages(&mut self) {
         // maybe decrypt actions should be outside main thread?
         let message_ui_receiver = self.message_ui_receiver.get().unwrap();
@@ -446,20 +492,31 @@ impl ChatState {
         }
     }
 
-    // TODO
     fn handle_content_message(&mut self, msg: String) {
-        let received_message: ContentMessage = serde_json::from_str(&msg).unwrap();
+        let received_message: ContentMessageWrapper = serde_json::from_str(&msg).unwrap();
+        let contact = self.contacts.iter_mut().find(|c| c.contact.contact_id == received_message.message.user_id).unwrap();
 
-        let contact = self.contacts.iter_mut().find(|c| c.contact.contact_id == received_message.sender_id).unwrap();
-        let nonce: XNonce = *GenericArray::from_slice(&received_message.nonce);
-        let decrypted_message_bytes = contact.cipher.decrypt(&nonce, received_message.content.as_ref()).unwrap();
+        let raw_nonce: [u8; 24] = BASE64_STANDARD
+            .decode(received_message.message.nonce)
+            .unwrap()
+            .try_into()
+            .unwrap();
+        let content: Vec<u8> = BASE64_STANDARD
+            .decode(received_message.message.content)
+            .unwrap()
+            .try_into()
+            .unwrap();
 
-        contact.messages.push(
+        let nonce: XNonce = *GenericArray::from_slice(&raw_nonce);
+        let decrypted_message_bytes = contact.cipher.decrypt(&nonce, content.as_ref()).unwrap();
+
+        contact.messages.push_back(
             Message {
-                sender_id: received_message.sender_id,
+                id: Some(received_message.message.id),
+                sender_id: received_message.message.user_id,
                 content: String::from_utf8(decrypted_message_bytes).unwrap()
             }
-        );
+        )
     }
 
     fn handle_invite_message(&mut self, msg: String) {
@@ -483,7 +540,7 @@ impl ChatState {
             ContactInfo {
                 contact: parsed_msg.contact,
                 cipher,
-                messages: Vec::new()
+                messages: LinkedList::new()
             }
         );
     }
@@ -496,13 +553,22 @@ impl ChatState {
             )
     }
 
+    fn get_selected_contact(&self) -> Option<&ContactInfo> {
+        self.contacts.iter()
+            .find(
+                |contact_info|
+                contact_info.contact.contact_id == self.current_selected_id
+            )
+    }
+
     fn send_content_message(&mut self) {
         let typed_message = self.typed_message.clone().replace("\n", "");
         let user_id = self.user_id.clone();
         let contact = self.get_mut_selected_contact().unwrap();
 
-        contact.messages.push(
+        contact.messages.push_back(
             Message {
+                id: None,
                 content: typed_message.clone(),
                 sender_id: user_id
             }
@@ -513,7 +579,7 @@ impl ChatState {
         // i dont know if its safe to send bytes serialized to JSON format
         // but it is what i am doing for now
         let receiver_id = contact.contact.contact_id.clone();
-        let ws_content_message = ContentMessage {
+        let ws_content_message = WsContentMessage {
             sender_id: user_id,
             receiver_id,
             target_id: receiver_id,
@@ -606,9 +672,44 @@ impl ChatState {
             ContactInfo {
                 contact: response.contact,
                 cipher,
-                messages: Vec::new()
+                messages: LinkedList::new(),
             }
         );
         ctx.request_repaint();
+    }
+
+    pub fn handle_task_fetch_chat_messages(&mut self, task_result: TaskResult, ctx: &egui::Context) {
+        self.is_fetching_messages = false;
+
+        if task_result.status_code >= 400 {
+            self.handle_task_error(task_result.response);
+            return;
+        }
+
+        let contact = self.get_mut_selected_contact().unwrap();
+        let response: Vec<FetchMessage> = serde_json::from_str(&task_result.response).unwrap();
+        for fetched_message in response {
+            let raw_nonce: [u8; 24] = BASE64_STANDARD
+                .decode(fetched_message.nonce)
+                .unwrap()
+                .try_into()
+                .unwrap();
+            let content: Vec<u8> = BASE64_STANDARD
+                .decode(fetched_message.content)
+                .unwrap()
+                .try_into()
+                .unwrap();
+
+            let nonce: XNonce = *GenericArray::from_slice(&raw_nonce);
+            let decrypted_message_bytes = contact.cipher.decrypt(&nonce, content.as_ref()).unwrap();
+
+            contact.messages.push_front(
+                Message {
+                    id: Some(fetched_message.id),
+                    sender_id: fetched_message.user_id,
+                    content: String::from_utf8(decrypted_message_bytes).unwrap()
+                }
+            );
+        }
     }
 }

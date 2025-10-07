@@ -26,7 +26,7 @@ impl Task for SendInviteContactTask {
             "receiver_email": self.receiver_email
         });
 
-        let response = http_client.post("contact/create", Some(body), Some(headers));
+        let response = http_client.post("user_api/contact/create", Some(body), Some(headers));
         match response {
             Ok(r) => {
                 let result = TaskResult::new(

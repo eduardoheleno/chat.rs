@@ -17,7 +17,7 @@ impl Task for AcceptInviteContactTask {
         let mut headers = HeaderMap::new();
         headers.insert("authToken", HeaderValue::from_str(&self.token).unwrap());
 
-        let path = format!("contact/accept-invite/{}", self.contact_id);
+        let path = format!("user_api/contact/accept-invite/{}", self.contact_id);
         let response = http_client.post(&path, None, Some(headers));
         match response {
             Ok(r) => {

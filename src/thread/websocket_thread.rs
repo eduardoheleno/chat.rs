@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use eframe::egui;
 
 #[derive(Serialize, Deserialize)]
-pub struct ContentMessage {
+pub struct WsContentMessage {
     pub sender_id: u64,
     pub receiver_id: u64,
     pub target_id: u64,
@@ -23,6 +23,20 @@ pub struct ContentMessage {
     pub r#type: MessageType,
     pub content: Vec<u8>,
     pub nonce: [u8; 24]
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ContentMessage {
+    pub id: u64,
+    pub user_id: u64,
+    pub chat_id: u64,
+    pub content: String,
+    pub nonce: String
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ContentMessageWrapper {
+    pub message: ContentMessage
 }
 
 #[derive(Serialize, Deserialize)]

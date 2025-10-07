@@ -19,7 +19,7 @@ impl Task for LoginTask {
             "password": self.password
         });
 
-        let response = http_client.post("user/login", Some(body), None);
+        let response = http_client.post("user_api/user/login", Some(body), None);
         match response {
             Ok(r) => {
                 let result = TaskResult::new(

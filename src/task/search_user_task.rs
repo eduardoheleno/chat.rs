@@ -26,7 +26,7 @@ impl Task for SearchUserTask {
 
         let query = vec![format!("email={}", self.search_param)];
 
-        let response = http_client.get("user/search", Some(query), Some(headers));
+        let response = http_client.get("user_api/user/search", Some(query), Some(headers));
         match response {
             Ok(r) => {
                 let result = TaskResult::new(

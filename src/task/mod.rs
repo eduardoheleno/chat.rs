@@ -5,10 +5,10 @@ use serde::{Deserialize, Serialize};
 pub enum TaskType {
     Login,
     CreateAccount,
-    FetchContactData,
     SearchUser,
     SendInviteContact,
-    AcceptInviteContact
+    AcceptInviteContact,
+    FetchChatMessages
 }
 
 pub struct TaskResult {
@@ -40,7 +40,7 @@ pub trait Task: Send {
 
 pub mod login_task;
 pub mod create_account_task;
-pub mod fetch_contact_data_task;
 pub mod search_user_task;
 pub mod send_invite_contact_task;
 pub mod accept_invite_contact_task;
+pub mod fetch_chat_messages;

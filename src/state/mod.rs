@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use chacha20poly1305::XChaCha20Poly1305;
+use std::collections::LinkedList;
 
 pub enum Page {
     Login,
@@ -17,14 +18,24 @@ pub struct ContactInfoJSON {
 }
 
 pub struct Message {
+    pub id: Option<u64>,
     pub content: String,
     pub sender_id: u64
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct FetchMessage {
+    pub id: u64,
+    pub user_id: u64,
+    pub chat_id: u64,
+    pub content: String,
+    pub nonce: String
 }
 
 pub struct ContactInfo {
     pub contact: ContactInfoJSON,
     pub cipher: XChaCha20Poly1305,
-    pub messages: Vec<Message>
+    pub messages: LinkedList<Message>
 }
 
 #[derive(Serialize, Deserialize)]
