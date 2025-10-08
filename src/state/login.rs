@@ -144,6 +144,7 @@ impl LoginState {
             ContactInfo {
                 contact,
                 cipher,
+                should_fetch_messages: true,
                 messages: LinkedList::new(),
             }
         }).collect();

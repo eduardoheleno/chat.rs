@@ -64,11 +64,13 @@ pub struct ChatState {
     pub show_invites_modal: bool,
     pub is_loading_accept_invite: bool,
 
+    pub y_chat_scroll_offset: f32,
+    pub should_scroll_down: bool,
+
     pub message_thread_sender: OnceCell<Sender<String>>,
     pub message_ui_receiver: OnceCell<Receiver<String>>
 }
 
-// TODO: keep this structs in another place
 #[derive(Serialize, Deserialize)]
 struct ChatWithMessages {
     chat_id: u64
@@ -112,6 +114,9 @@ impl Default for ChatState {
 
             show_invites_modal: false,
             is_loading_accept_invite: false,
+
+            y_chat_scroll_offset: 0.,
+            should_scroll_down: false,
 
             message_thread_sender: OnceCell::new(),
             message_ui_receiver: OnceCell::new()
@@ -163,7 +168,8 @@ impl ChatState {
                                     egui::Frame::NONE
                                         .show(ui, |ui| {
                                             let selected = self.current_selected_id == contact.contact.contact_id;
-                                            let response = ui.add(
+                                            let response = ui.add_enabled(
+                                                !self.is_fetching_messages,
                                                 egui::Button::selectable(
                                                     selected,
                                                     egui::RichText::new(contact.contact.contact_email.clone())
@@ -208,7 +214,14 @@ impl ChatState {
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| {
+            let mut scroll_area = egui::ScrollArea::vertical().stick_to_bottom(true);
+
+            if self.should_scroll_down {
+                self.should_scroll_down = false;
+                scroll_area = scroll_area.vertical_scroll_offset(100.);
+            }
+
+            let scroll_output = scroll_area.show(ui, |ui| {
                 ui.heading("Chat");
 
                 let user_id = self.user_id;
@@ -246,8 +259,6 @@ impl ChatState {
                                 });
                         });
                     }
-
-                    ui.scroll_to_cursor(Some(egui::Align::BOTTOM));
                 } else {
                     ui.add(
                         egui::Label::new(
@@ -256,10 +267,13 @@ impl ChatState {
                     );
                 }
             });
+
+            self.y_chat_scroll_offset = scroll_output.state.offset.y;
         });
 
-        self.handle_messages();
+
         self.handle_user_interaction(http_thread, result_queue);
+        self.handle_messages();
     }
 
     fn show_error_modal(&mut self, ctx: &egui::Context) {
@@ -377,7 +391,9 @@ impl ChatState {
         result_queue: &mut Vec<Receiver<TaskResult>>
     ) {
         if self.clicked_contact_id.is_some() {
-            self.fetch_messages(http_thread, result_queue);
+            if self.fetch_messages(http_thread, result_queue) {
+                self.is_fetching_messages = true;
+            }
         }
         if self.should_search {
             self.search_user(http_thread, result_queue);
@@ -453,27 +469,28 @@ impl ChatState {
         &mut self,
         http_thread: &Sender<TaskWrapper>,
         result_queue: &mut Vec<Receiver<TaskResult>>
-    ) {
-        self.is_fetching_messages = true;
+    ) -> bool {
+        if let Some(c) = self.get_selected_contact() {
+            let offset = c.messages.len();
+            if self.is_fetching_messages == false && c.should_fetch_messages && (offset <= 20 || self.y_chat_scroll_offset == 0.) {
+                let fetch_chat_message_task = FetchChatMessagesTask::new(
+                    c.contact.chat_id,
+                    offset as u64,
+                    self.token.clone()
+                );
+                let (task_wrapper, task_channel_receiver) = TaskWrapper::new(
+                    Box::new(fetch_chat_message_task)
+                );
 
-        let _ = self.clicked_contact_id.take().unwrap();
-        let contact = self.get_selected_contact().unwrap();
+                http_thread.send(task_wrapper).unwrap();
+                result_queue.push(task_channel_receiver);
 
-        let offset = contact.messages.len();
-        if offset <= 20 {
-            let fetch_chat_messages_task = FetchChatMessagesTask::new(
-                contact.contact.chat_id,
-                offset as u64,
-                self.token.clone()
-            );
-            let (task_wrapper, task_channel_receiver) = TaskWrapper::new(
-                Box::new(fetch_chat_messages_task)
-            );
-
-            http_thread.send(task_wrapper).unwrap();
-            result_queue.push(task_channel_receiver);
+                true
+            } else {
+                false
+            }
         } else {
-            self.is_fetching_messages = false;
+            false
         }
     }
 
@@ -512,7 +529,7 @@ impl ChatState {
 
         contact.messages.push_back(
             Message {
-                id: Some(received_message.message.id),
+                _id: Some(received_message.message.id),
                 sender_id: received_message.message.user_id,
                 content: String::from_utf8(decrypted_message_bytes).unwrap()
             }
@@ -540,6 +557,7 @@ impl ChatState {
             ContactInfo {
                 contact: parsed_msg.contact,
                 cipher,
+                should_fetch_messages: true,
                 messages: LinkedList::new()
             }
         );
@@ -568,7 +586,7 @@ impl ChatState {
 
         contact.messages.push_back(
             Message {
-                id: None,
+                _id: None,
                 content: typed_message.clone(),
                 sender_id: user_id
             }
@@ -672,15 +690,14 @@ impl ChatState {
             ContactInfo {
                 contact: response.contact,
                 cipher,
+                should_fetch_messages: true,
                 messages: LinkedList::new(),
             }
         );
         ctx.request_repaint();
     }
 
-    pub fn handle_task_fetch_chat_messages(&mut self, task_result: TaskResult, ctx: &egui::Context) {
-        self.is_fetching_messages = false;
-
+    pub fn handle_task_fetch_chat_messages(&mut self, task_result: TaskResult) {
         if task_result.status_code >= 400 {
             self.handle_task_error(task_result.response);
             return;
@@ -688,6 +705,13 @@ impl ChatState {
 
         let contact = self.get_mut_selected_contact().unwrap();
         let response: Vec<FetchMessage> = serde_json::from_str(&task_result.response).unwrap();
+
+        if response.len() == 0 {
+            contact.should_fetch_messages = false;
+            self.is_fetching_messages = false;
+            return;
+        }
+
         for fetched_message in response {
             let raw_nonce: [u8; 24] = BASE64_STANDARD
                 .decode(fetched_message.nonce)
@@ -705,11 +729,14 @@ impl ChatState {
 
             contact.messages.push_front(
                 Message {
-                    id: Some(fetched_message.id),
+                    _id: Some(fetched_message.id),
                     sender_id: fetched_message.user_id,
                     content: String::from_utf8(decrypted_message_bytes).unwrap()
                 }
             );
         }
+
+        self.should_scroll_down = true;
+        self.is_fetching_messages = false;
     }
 }

@@ -18,7 +18,7 @@ pub struct ContactInfoJSON {
 }
 
 pub struct Message {
-    pub id: Option<u64>,
+    pub _id: Option<u64>,
     pub content: String,
     pub sender_id: u64
 }
@@ -35,6 +35,7 @@ pub struct FetchMessage {
 pub struct ContactInfo {
     pub contact: ContactInfoJSON,
     pub cipher: XChaCha20Poly1305,
+    pub should_fetch_messages: bool,
     pub messages: LinkedList<Message>
 }
 
