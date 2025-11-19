@@ -72,7 +72,7 @@ impl MessageType {
 }
 
 pub fn init_websocket(jwt_token: String) -> Result<WebSocket<MaybeTlsStream<TcpStream>>, std::io::Error> {
-    let uri: Uri = "ws://localhost:8000/ws".parse().unwrap();
+    let uri: Uri = "ws://eduardodev.app.br/ws_server".parse().unwrap();
     let request = ClientRequestBuilder::new(uri)
         .with_header("authToken", jwt_token);
 

@@ -105,9 +105,6 @@ impl CreateAccountState {
                                 result_queue.push(task_channel_receiver);
                             }
                         });
-                        if ui.button("debug").clicked() {
-                            // get_private_key("eduardo@email.com".to_owned());
-                        }
                     }
 
                     ui.label(

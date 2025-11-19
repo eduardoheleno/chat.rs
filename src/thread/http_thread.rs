@@ -16,7 +16,7 @@ impl TaskWrapper {
 }
 
 pub fn init_http_thread(http_thread_receiver: Receiver<TaskWrapper>) {
-    let http_client = HttpClient::new("http://localhost/");
+    let http_client = HttpClient::new("http://eduardodev.app.br/");
     let mut task_queue: VecDeque<TaskWrapper> = VecDeque::new();
 
     loop {

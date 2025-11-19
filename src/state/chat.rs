@@ -140,7 +140,7 @@ impl ChatState {
         if self.show_invites_modal {
             self.show_invites_modal(ctx);
         }
-
+        
         egui::SidePanel::left("left_panel")
             .resizable(false)
             .show(ctx, |ui| {
@@ -273,7 +273,7 @@ impl ChatState {
 
 
         self.handle_user_interaction(http_thread, result_queue);
-        self.handle_messages();
+        self.handle_messages(ctx);
     }
 
     fn show_error_modal(&mut self, ctx: &egui::Context) {
@@ -494,13 +494,13 @@ impl ChatState {
         }
     }
 
-    fn handle_messages(&mut self) {
+    fn handle_messages(&mut self, ctx: &egui::Context) {
         // maybe decrypt actions should be outside main thread?
         let message_ui_receiver = self.message_ui_receiver.get().unwrap();
         if let Ok(msg) = message_ui_receiver.try_recv() {
             let parsed_msg: Value = serde_json::from_str(&msg).unwrap();
             if parsed_msg["type"] == MessageType::Content.as_str() {
-                self.handle_content_message(msg);
+                self.handle_content_message(ctx, msg);
             } else if parsed_msg["type"] == MessageType::Invite.as_str() {
                 self.handle_invite_message(msg);
             } else if parsed_msg["type"] == MessageType::InviteAccepted.as_str() {
@@ -509,7 +509,7 @@ impl ChatState {
         }
     }
 
-    fn handle_content_message(&mut self, msg: String) {
+    fn handle_content_message(&mut self, ctx: &egui::Context, msg: String) {
         let received_message: ContentMessageWrapper = serde_json::from_str(&msg).unwrap();
         let contact = self.contacts.iter_mut().find(|c| c.contact.contact_id == received_message.message.user_id).unwrap();
 
@@ -533,7 +533,8 @@ impl ChatState {
                 sender_id: received_message.message.user_id,
                 content: String::from_utf8(decrypted_message_bytes).unwrap()
             }
-        )
+        );
+        ctx.request_repaint();
     }
 
     fn handle_invite_message(&mut self, msg: String) {
